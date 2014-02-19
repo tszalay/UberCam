@@ -119,7 +119,7 @@ if __name__ == '__main__':
     cap = init(1600,1200)
     
     # get inital values
-    _, frame = cap.read()
+    _, frame = cap.read()		
     height, width, _ = frame.shape
     
     # zoom center and amount
@@ -132,7 +132,15 @@ if __name__ == '__main__':
     subSize = (160,120)
     subPos = (displaySize[0]-subSize[0]-20,20)
     
+    # are we doing a running average?
+    doAverage = False
+    # how many frames to store
+    avgCount = 20
+    # which index are we on in rotating buffer?
+    avgIndex = 0
+    
     # and create an image to draw to screen
+    # this way we preserve image settings
     windowImage = cv2.resize(frame, windowSize)
     
     # connect to stepper motors
@@ -146,6 +154,7 @@ if __name__ == '__main__':
         if (frame == None):
             print "Frame read error"
             break;
+
         # convert to grayscale from G channel
         frame[:,:,2] = frame[:,:,1]
         frame[:,:,0] = frame[:,:,1]
@@ -162,6 +171,16 @@ if __name__ == '__main__':
         
         # clear the window
         windowImage.fill( (0,0,0) )
+        
+        # if we're averaging, do a bit o' hacking
+        if (doAverage):
+            newAvgFrame = newAvgFrame + (frame/float(avgCount))
+            avgIndex = (avgIndex+1) % avgCount
+            if (avgIndex == 0):
+                # got through an entire cycle, update avg frame
+                avgFrame = newAvgFrame.copy()
+                newAvgFrame.fill((0,0,0))
+            frame = avgFrame
         
         # scale from zoombox to display size, and draw to window
         windowImage[0:displaySize[1],0:displaySize[0],:] = \
@@ -198,7 +217,7 @@ if __name__ == '__main__':
         
         if (char == 27):
             loop = False
-        if (char == ord('p')):
+        if (char == ord('p') or char == ord('P')):
             # opencv's hack to open camera settings panel
             cap.set(37, 1)
         if (char == ord(' ')):
@@ -219,6 +238,16 @@ if __name__ == '__main__':
             zoomx = zoomx-d
         if (char == 2555904):
             zoomx = zoomx+d
+        
+        # toggle running average mode
+        if (char == ord('Y') or char == ord('y')):
+            doAverage = not doAverage
+            if (doAverage):
+                # we just started averaging, set array to current frame
+                avgIndex = 0
+                avgFrame = frame.copy()
+                newAvgFrame = frame.copy()
+                newAvgFrame.fill((0,0,0))
             
         # set number of steps using number keys
         if (char >= ord('1') and char <= ord('8')):
