@@ -66,6 +66,10 @@ def saveImage(img):
     print 'Saved ' + fname
     imgIndex = imgIndex + 1
     
+def cvPt(pt):
+    '''Format a point in OpenCV-appropriate int-tuple'''
+    return tuple(map(int,pt))
+    
 def subImage(img, origin, size):
     '''Return sub-image by top-left coords and w/h (tuples)'''
     return img[origin[1]:origin[1]+size[1],origin[0]:origin[0]+size[0]]
@@ -98,9 +102,12 @@ def drawScaleBar(img):
 def drawStepperInfo(img):
     '''Draws the current stepper motor position and whatnot'''
     ds = np.array(displaySize)
-    ds[0] = 40
-    ds[1] += 35
- 
+    ds[0] = 350
+    ds[1] += 45
+
+    # draw label
+    leftText(img, 'Stepper:', ds + np.array([-20,-25]),fontScale=0.55)
+     
     # draw current stepper position
     stepperPos = np.array(stepper.position)*umPerStep
     for i in range(3):
@@ -108,8 +115,32 @@ def drawStepperInfo(img):
         leftText(img, s, ds + np.array([0,20*i]))
     
     # draw text for current step number
-    s = '%d steps (%0.2f um)' % (stepperSteps,np.round(stepperSteps*umPerStep,2))
-    leftText(img, s, ds + np.array([200,20]))
+    s = '%0.3f um (%d steps)' % (np.round(stepperSteps*umPerStep,2),stepperSteps)
+    centeredText(img, s, tuple(np.array(displaySize)+np.array([-150, 80])),fontScale=0.6)
+    
+def drawTrackInfo(img,tgts):
+    '''Draws the current stepper motor position and whatnot'''
+    ds = np.array(displaySize)
+    ds[0] = 80
+    ds[1] += 45
+    
+    # draw label
+    leftText(img, 'Tracking:', ds + np.array([-20,-25]),fontScale=0.55)
+     
+    # draw current tracked offset position
+    #trackDelta = (tgts[1].getPosition()-tgts[0].getPosition())*umPerPixel
+    trackDelta = tgts[1].getPosition()*umPerPixel
+    for i in range(2):
+        s = '%s: %0.3f um' % ('XZ'[i],np.round(trackDelta[1-i],3))
+        leftText(img, s, ds + np.array([0,20*i]))
+        
+def drawTrackBoxes(img, tgts):
+    '''Draws the outlines of the tracked shape boxes'''
+    for i in range(2):
+        center = tgts[i].getScreenPosition()
+        ul = center - UberTrack.TgtSize/2
+        br = center + UberTrack.TgtSize/2
+        cv2.rectangle(img,cvPt(ul),cvPt(br),(255,255,255))
     
 def onMouse(event,x,y,flags,tgts):
     '''Handles mouse events in the main window'''
@@ -150,7 +181,7 @@ if __name__ == '__main__':
     # are we doing a running average?
     doAverage = False
     # how many frames to store
-    avgCount = 20
+    avgCount = 10
     # which index are we on in rotating buffer?
     avgIndex = 0
     # current image
@@ -195,11 +226,16 @@ if __name__ == '__main__':
         # first, create a shrunken version of the main image
         t1 = time.time()
         smimg = cv2.resize(curimg,(width/4,height/4))
+        # set kf if stepper is moving
+        if (stepper.timeSinceMoved() < 0.5):
+            targets[1].kfStep()
         # then call target-matching functions
         for i in range(2):
             loc = targets[i].findMatch(curimg, smimg)
-            cv2.circle(curimg,tuple(loc),5,0)
-            print loc
+            cv2.circle(curimg,cvPt(loc),5,0)
+            cv2.circle(curimg,cvPt(targets[i].getScreenPosition()),8,255)
+        
+        drawTrackBoxes(curimg,targets)
                 
         # always have average running
         newAvgFrame = newAvgFrame + (curimg/float(avgCount))
@@ -223,18 +259,19 @@ if __name__ == '__main__':
         # should we draw the zoombox sub-window?
         if subView and (zoom > 0):
             windowImage[subPos[1]:subPos[1]+subSize[1],subPos[0]:subPos[0]+subSize[0]] = \
-                    cv2.resize(frame,subSize,interpolation=cv2.cv.CV_INTER_AREA)
+                    cv2.resize(curimg,subSize,interpolation=cv2.cv.CV_INTER_AREA)
             cv2.rectangle(windowImage,subPos,(subPos[0]+subSize[0],subPos[1]+subSize[1]),(255,255,255))
         
         drawScaleBar(windowImage)
         drawStepperInfo(windowImage)
+        drawTrackInfo(windowImage,targets)
         
         # display the image
         cv2.imshow("UberCam", windowImage)
         
         # make sure backlash is set if needed, to 1 um or so
         if (stepperBacklash):
-            stepper.setBacklash(15)
+            stepper.setBacklash(35)
         else:
             stepper.setBacklash(0)
     
@@ -309,6 +346,7 @@ if __name__ == '__main__':
             stepper.queueMove(2, -stepperSteps)
         if (char == ord('E')):
             stepper.queueMove(2, stepperSteps)
+            
             
     stepper.close()
     cap.release()

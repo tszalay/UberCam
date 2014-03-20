@@ -4,6 +4,11 @@ import cv2
 # size of target region, in x-y
 TgtSize = np.array((200,600))
 
+# Kalman filtering params
+KF_MeasVar = 0.5**2 # measurement variance
+KF_ProcVar = 1e-3   # process variance, no movement
+KF_StepVar = 50.0   # variance when we take a step
+
 class Target:
     '''Class for tracking position of subregion in a camera image'''
     
@@ -14,12 +19,19 @@ class Target:
         # large and small templates
         self._tgtbig = np.zeros(TgtSize[::-1],np.uint8)
         self._tgtsmall = np.zeros(TgtSize[::-1]/4,np.uint8)
+        # initialize Kalman filter
+        self._kfP = KF_StepVar
+        
+    def kfStep(self):
+        '''We too a step, bump up the variance'''
+        self._kfP = KF_StepVar
         
     def setTarget(self,img,center):
         '''Sets target image based on given center coordinate'''
         loc = np.array(center)
         ul = loc - TgtSize/2
-        br = loc + TgtSize/2 
+        br = loc + TgtSize/2
+        # make sure we don't overstep our bounds
         if (np.any(ul < 0) or np.any(br >= np.array(img.shape[::-1]))):
             return
         
@@ -27,6 +39,14 @@ class Target:
         self._tgtsmall = cv2.resize(self._tgtbig,tuple(TgtSize/4))
         self._loc = loc.copy()
         self._orig = loc.copy()
+        
+    def getPosition(self):
+        '''Return the position relative to where the image was taken'''
+        return self._loc - self._orig
+        
+    def getScreenPosition(self):
+        '''Return the pixel position'''
+        return self._loc
     
     def findMatch(self, imgbig, imgsmall):
         '''Find position of best match, need big and small (/4) versions of image'''
@@ -54,5 +74,10 @@ class Target:
         # and recenter to full image
         loc = ul + lbig + TgtSize/2
         
+        # now update Kalman filter
+        self._kfP += KF_ProcVar
+        K = self._kfP/(self._kfP + KF_MeasVar)
+        self._loc += K*(loc-self._loc)
+        self._kfP = (1-K)*self._kfP
         
         return loc

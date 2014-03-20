@@ -1,4 +1,5 @@
 import serial
+import time
 
 # the two states in the "state machine", not worth using an enum
 ST_IDLE = 0
@@ -11,6 +12,9 @@ class Stepper():
     def __init__(self, port=0):
         # current state
         self.curState = ST_IDLE
+        
+        # last time we moved
+        self.lastMove = time.time()
         
         # the queue of commands we are waiting to send.
         # each element is a tuple of (cmd, axis, steps)
@@ -27,6 +31,13 @@ class Stepper():
         self.ser = serial.Serial(port, 57600)
         print "Connected on port " + self.ser.name
         
+    def isBusy(self):
+        return (self.curState == ST_BUSY)
+    
+    def timeSinceMoved(self):
+        if (self.isBusy()):
+            return 0
+        return time.time() - self.lastMove
         
     def update(self):
         '''Check for acks, transmit commands if necessary, etc'''
@@ -37,6 +48,7 @@ class Stepper():
             # if we got an ack, we are again idle
             if (b == CMDS['ACK']):
                 self.curState = ST_IDLE
+                self.lastMove = time.time()
                 print 'ACK'
                 # delete first element in list, make sure it's there
                 if self.cmdQueue:
