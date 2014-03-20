@@ -4,6 +4,7 @@ import glob
 import numpy as np
 import time
 import UberStep
+import UberTrack
 
 imgDir = 'D:\\UberCam\\'
 imgIndex = 0
@@ -52,7 +53,7 @@ def init(width, height):
     cap.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH,width)
     cap.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT,height)
     time.sleep(1)
-    cap.set(cv2.cv.CV_CAP_PROP_EXPOSURE,-4)
+    cap.set(cv2.cv.CV_CAP_PROP_EXPOSURE,-6)
     
     return cap
     
@@ -109,6 +110,17 @@ def drawStepperInfo(img):
     # draw text for current step number
     s = '%d steps (%0.2f um)' % (stepperSteps,np.round(stepperSteps*umPerStep,2))
     leftText(img, s, ds + np.array([200,20]))
+    
+def onMouse(event,x,y,flags,tgts):
+    '''Handles mouse events in the main window'''
+    # convert to full-screen size
+    x = width*x/float(displaySize[0])
+    y = height*y/float(displaySize[1])
+    if event == cv2.EVENT_LBUTTONDBLCLK:
+        tgts[0].setTarget(curimg,(x,y))
+    if event == cv2.EVENT_RBUTTONDBLCLK:
+        tgts[1].setTarget(curimg,(x,y))
+        
  
 if __name__ == '__main__':
     # main doesn't need global decls since this isn't a function!
@@ -122,6 +134,9 @@ if __name__ == '__main__':
     _, frame = cap.read()		
     height, width, _ = frame.shape
     
+    # and initialize target-matching frames, as single-channel versions of frame
+    targets = [UberTrack.Target() for i in [0,1]]
+
     # zoom center and amount
     zoomx = width/2
     zoomy = height/2
@@ -138,10 +153,17 @@ if __name__ == '__main__':
     avgCount = 20
     # which index are we on in rotating buffer?
     avgIndex = 0
+    # current image
+    avgFrame = np.zeros((height,width),np.uint8)
+    newAvgFrame = np.zeros((height,width),np.uint8)
     
     # and create an image to draw to screen
-    # this way we preserve image settings
-    windowImage = cv2.resize(frame, windowSize)
+    windowImage = np.zeros(windowSize[::-1],np.uint8)
+    
+    # create the window and set mouse callback
+    # pass target image list as special param so we can write it
+    cv2.namedWindow('UberCam')
+    cv2.setMouseCallback('UberCam',onMouse,targets)
     
     # connect to stepper motors
     stepper = UberStep.Stepper(2)
@@ -155,10 +177,9 @@ if __name__ == '__main__':
             print "Frame read error"
             break;
 
-        # convert to grayscale from G channel
-        frame[:,:,2] = frame[:,:,1]
-        frame[:,:,0] = frame[:,:,1]
-        #centeredText(frame,"foobar!",(800,600),fontScale=7)
+        # convert to grayscale by extracting G channel
+        curimg = np.array(frame[:,:,1])
+        
         # calculate source box from captured image, based on current zoom value
         zoomBox = (width/(2**zoom),height/(2**zoom))
         # make sure we aren't over any of the edges
@@ -169,26 +190,39 @@ if __name__ == '__main__':
         # get the top-left of the zoombox
         zoomOrigin = (zoomx-zoomBox[0]/2,zoomy-zoomBox[1]/2)
         
+        
+        # find the position of the pyramids
+        # first, create a shrunken version of the main image
+        t1 = time.time()
+        smimg = cv2.resize(curimg,(width/4,height/4))
+        # then call target-matching functions
+        for i in range(2):
+            loc = targets[i].findMatch(curimg, smimg)
+            cv2.circle(curimg,tuple(loc),5,0)
+            print loc
+                
+        # always have average running
+        newAvgFrame = newAvgFrame + (curimg/float(avgCount))
+        avgIndex = (avgIndex+1) % avgCount
+        if (avgIndex == 0):
+            # got through an entire cycle, update avg frame
+            avgFrame = newAvgFrame.copy()
+            newAvgFrame.fill((0,0,0))
+
+        # but only display when we gotsa
+        if (doAverage):
+            curimg = avgFrame
+
         # clear the window
         windowImage.fill( (0,0,0) )
         
-        # if we're averaging, do a bit o' hacking
-        if (doAverage):
-            newAvgFrame = newAvgFrame + (frame/float(avgCount))
-            avgIndex = (avgIndex+1) % avgCount
-            if (avgIndex == 0):
-                # got through an entire cycle, update avg frame
-                avgFrame = newAvgFrame.copy()
-                newAvgFrame.fill((0,0,0))
-            frame = avgFrame
-        
-        # scale from zoombox to display size, and draw to window
-        windowImage[0:displaySize[1],0:displaySize[0],:] = \
-                cv2.resize(subImage(frame,zoomOrigin,zoomBox),displaySize)
+        # scale from full image to display size, and draw to window
+        windowImage[0:displaySize[1],0:displaySize[0]] = \
+                cv2.resize(subImage(curimg,zoomOrigin,zoomBox),displaySize)
                 
-        # should we draw the sub-window?
+        # should we draw the zoombox sub-window?
         if subView and (zoom > 0):
-            windowImage[subPos[1]:subPos[1]+subSize[1],subPos[0]:subPos[0]+subSize[0],:] = \
+            windowImage[subPos[1]:subPos[1]+subSize[1],subPos[0]:subPos[0]+subSize[0]] = \
                     cv2.resize(frame,subSize,interpolation=cv2.cv.CV_INTER_AREA)
             cv2.rectangle(windowImage,subPos,(subPos[0]+subSize[0],subPos[1]+subSize[1]),(255,255,255))
         
@@ -245,8 +279,8 @@ if __name__ == '__main__':
             if (doAverage):
                 # we just started averaging, set array to current frame
                 avgIndex = 0
-                avgFrame = frame.copy()
-                newAvgFrame = frame.copy()
+                avgFrame = curimg.copy()
+                newAvgFrame = curimg.copy()
                 newAvgFrame.fill((0,0,0))
             
         # set number of steps using number keys
