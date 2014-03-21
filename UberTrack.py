@@ -5,7 +5,7 @@ import cv2
 TgtSize = np.array((200,600))
 
 # Kalman filtering params
-KF_MeasVar = 0.5**2 # measurement variance
+KF_MeasVar = 1**2 # measurement variance
 KF_ProcVar = 1e-3   # process variance, no movement
 KF_StepVar = 50.0   # variance when we take a step
 
@@ -70,9 +70,27 @@ class Target:
         
         # now find the best match in the full-size image
         tmp = cv2.matchTemplate(imgbig[ul[1]:br[1],ul[0]:br[0]],self._tgtbig,cv2.cv.CV_TM_SQDIFF_NORMED)
+        sztmp = tmp.shape[::-1]
         lbig = np.array(cv2.minMaxLoc(tmp)[2])
+        # and do sub-pixel refinement if we can
+        if (lbig[0] > 0 and lbig[1] > 0 and lbig[0] < sztmp[0]-1 and lbig[1] < sztmp[1]-1):
+            xs = np.array([-1,0,1])
+            # get 3x3 pixel array around max
+            vs = np.array(tmp[lbig[1]-1:lbig[1]+2,lbig[0]-1:lbig[0]+2])
+            # sum them in each axis to get two 3-point arrays
+            sx = np.sum(vs,0)
+            sy = np.sum(vs,1)
+            # calc. their polynomial fits
+            px = np.polyfit(xs,sx,2)
+            py = np.polyfit(xs,sy,2)
+            # and their maxima
+            xm = -0.5*px[1]/px[0]
+            ym = -0.5*py[1]/py[0]
+            print (xm,ym)
+            lbig += np.array((xm,ym))
+            
         # and recenter to full image
-        loc = ul + lbig + TgtSize/2
+        loc = ul + lbig + TgtSize/2.0
         
         # now update Kalman filter
         self._kfP += KF_ProcVar

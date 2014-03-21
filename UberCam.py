@@ -111,7 +111,7 @@ def drawStepperInfo(img):
     # draw current stepper position
     stepperPos = np.array(stepper.position)*umPerStep
     for i in range(3):
-        s = '%s: %0.2f um' % ('XYZ'[i],np.round(stepperPos[i],2))
+        s = '%s: %+0.2f um' % ('XYZ'[i],np.round(stepperPos[i],2))
         leftText(img, s, ds + np.array([0,20*i]))
     
     # draw text for current step number
@@ -131,7 +131,7 @@ def drawTrackInfo(img,tgts):
     #trackDelta = (tgts[1].getPosition()-tgts[0].getPosition())*umPerPixel
     trackDelta = tgts[1].getPosition()*umPerPixel
     for i in range(2):
-        s = '%s: %0.3f um' % ('XZ'[i],np.round(trackDelta[1-i],3))
+        s = '%s: %+0.2f um' % ('XZ'[i],np.round(trackDelta[1-i],2))
         leftText(img, s, ds + np.array([0,20*i]))
         
 def drawTrackBoxes(img, tgts):
@@ -271,7 +271,7 @@ if __name__ == '__main__':
         
         # make sure backlash is set if needed, to 1 um or so
         if (stepperBacklash):
-            stepper.setBacklash(35)
+            stepper.setBacklash(15)
         else:
             stepper.setBacklash(0)
     
@@ -292,7 +292,7 @@ if __name__ == '__main__':
             # opencv's hack to open camera settings panel
             cap.set(37, 1)
         if (char == ord(' ')):
-            saveImage(frame)
+            saveImage(frame[:,:,1])
         # zoom in and out
         if (char == ord('=') or char == ord('+')):
             zoom = min(zoom+1,4)
