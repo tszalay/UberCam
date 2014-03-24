@@ -20,7 +20,7 @@ umPerPixel = 0.136/2
 umPerStep = 500./1824/8;
 
 # step magnitudes to be selected by number keys
-stepAmts = [4,8,15]+[np.round(x/umPerStep) for x in [1.0, 5.0, 25.0, 100.0, 500.0]]
+stepAmts = [2,4,8,15]+[np.round(x/umPerStep) for x in [1.0, 5.0, 25.0, 100.0, 500.0]]
 
 # stepper motor movement distance, in steps, taken from the above array
 stepperSteps = stepAmts[0]
@@ -323,7 +323,7 @@ if __name__ == '__main__':
                 newAvgFrame.fill((0,0,0))
             
         # set number of steps using number keys
-        if (char >= ord('1') and char <= ord('8')):
+        if (char >= ord('1') and char <= ord('9')):
             stepperSteps = int(np.round(stepAmts[char-ord('1')]))
             
         # set whether motor is doing backlash compensation motion or not
