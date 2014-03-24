@@ -46,7 +46,11 @@ class Target:
         
     def getScreenPosition(self):
         '''Return the pixel position'''
-        return self._loc
+        return self._loc.copy()
+        
+    def setZero(self):
+        '''Set current position to be origin'''
+        self._orig = self._loc.copy()
     
     def findMatch(self, imgbig, imgsmall):
         '''Find position of best match, need big and small (/4) versions of image'''
@@ -86,7 +90,7 @@ class Target:
             # and their maxima
             xm = -0.5*px[1]/px[0]
             ym = -0.5*py[1]/py[0]
-            print (xm,ym)
+            
             lbig += np.array((xm,ym))
             
         # and recenter to full image

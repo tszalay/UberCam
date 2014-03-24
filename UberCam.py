@@ -13,17 +13,17 @@ imgIndex = 0
 displaySize = (800,600)
 windowSize = (800,700)
 
-# scaling of image, as per full camera resolution (needs calibration)
-umPerPixel = 0.1341
+# scaling of image, as per full camera resolution
+umPerPixel = 0.136/2
 
 # stepper motor distance per each full step
-umPerStep = 500./1824/4;
+umPerStep = 500./1824/8;
 
 # step magnitudes to be selected by number keys
-stepAmts = [2,4,8]+[x/umPerStep for x in [1.0, 5.0, 25.0, 100.0, 500.0]]
+stepAmts = [4,8,15]+[np.round(x/umPerStep) for x in [1.0, 5.0, 25.0, 100.0, 500.0]]
 
 # stepper motor movement distance, in steps, taken from the above array
-stepperSteps = 2
+stepperSteps = stepAmts[0]
 
 # stepper motor backlash compensation
 stepperBacklash = True
@@ -116,6 +116,8 @@ def drawStepperInfo(img):
     
     # draw text for current step number
     s = '%0.3f um (%d steps)' % (np.round(stepperSteps*umPerStep,2),stepperSteps)
+    if (stepperBacklash):
+        s += ' B'
     centeredText(img, s, tuple(np.array(displaySize)+np.array([-150, 80])),fontScale=0.6)
     
 def drawTrackInfo(img,tgts):
@@ -333,6 +335,8 @@ if __name__ == '__main__':
             stepper.homeAll()
         if (char == ord('Z')):
             stepper.setZero()
+            for t in targets:
+                t.setZero()
         # axis movement
         if (char == ord('A')):
             stepper.queueMove(0, stepperSteps)
