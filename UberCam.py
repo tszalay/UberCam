@@ -3,8 +3,9 @@ import datetime
 import glob
 import numpy as np
 import time
-import UberStep
-import UberTrack
+
+import uc480
+
 
 imgDir = 'D:\\UberCam\\'
 imgIndex = 0
@@ -14,19 +15,7 @@ displaySize = (800,600)
 windowSize = (800,700)
 
 # scaling of image, as per full camera resolution
-umPerPixel = 0.136/2
-
-# stepper motor distance per each full step
-umPerStep = 500./1824/8;
-
-# step magnitudes to be selected by number keys
-stepAmts = [2,4,8,15]+[np.round(x/umPerStep) for x in [1.0, 5.0, 25.0, 100.0, 500.0]]
-
-# stepper motor movement distance, in steps, taken from the above array
-stepperSteps = stepAmts[0]
-
-# stepper motor backlash compensation
-stepperBacklash = True
+umPerPixel = 0.113
 
 
 
@@ -36,7 +25,7 @@ def imgRoot():
     d = datetime.datetime.today()
     return d.strftime("%Y-%m-%d")
 
-def init(width, height):
+def init():
     global imgIndex
     
     # figure out how many images we have already from today
@@ -47,15 +36,23 @@ def init(width, height):
     
     print 'Starting file list at index ' + str(imgIndex)
     
-    # create the camera
-    cap = cv2.VideoCapture(0)
-    cv2.namedWindow("UberCam", cv2.cv.CV_WINDOW_AUTOSIZE)
-    cap.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH,width)
-    cap.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT,height)
-    time.sleep(1)
-    cap.set(cv2.cv.CV_CAP_PROP_EXPOSURE,-6)
+    # create the ThorLabs camera
+    camera = uc480.camera()
+    camera.AllocImageMem()
+    camera.SetImageMem()
+    camera.SetImageSize()
+    camera.SetColorMode()
+    camera.SetPixelClock(30)
+    camera.SetFrameRate(5)
+    camera.SetExposureTime()
+    camera.SetGain(20)
+    camera.SetGainBoost()
+    camera.SetGamma(160)
+    camera.CaptureVideo()
     
-    return cap
+    cv2.namedWindow("UberCam", cv2.cv.CV_WINDOW_AUTOSIZE)
+    
+    return camera
     
     
 def saveImage(img):
@@ -98,61 +95,6 @@ def drawScaleBar(img):
     # and the label
     ums = umPerPixel * 200 / 2**zoom
     centeredText(img, '{:3.1f} um'.format(ums), tuple(ds+np.array([-150, 40])))
-    
-def drawStepperInfo(img):
-    '''Draws the current stepper motor position and whatnot'''
-    ds = np.array(displaySize)
-    ds[0] = 350
-    ds[1] += 45
-
-    # draw label
-    leftText(img, 'Stepper:', ds + np.array([-20,-25]),fontScale=0.55)
-     
-    # draw current stepper position
-    stepperPos = np.array(stepper.position)*umPerStep
-    for i in range(3):
-        s = '%s: %+0.2f um' % ('XYZ'[i],np.round(stepperPos[i],2))
-        leftText(img, s, ds + np.array([0,20*i]))
-    
-    # draw text for current step number
-    s = '%0.3f um (%d steps)' % (np.round(stepperSteps*umPerStep,2),stepperSteps)
-    if (stepperBacklash):
-        s += ' B'
-    centeredText(img, s, tuple(np.array(displaySize)+np.array([-150, 80])),fontScale=0.6)
-    
-def drawTrackInfo(img,tgts):
-    '''Draws the current stepper motor position and whatnot'''
-    ds = np.array(displaySize)
-    ds[0] = 80
-    ds[1] += 45
-    
-    # draw label
-    leftText(img, 'Tracking:', ds + np.array([-20,-25]),fontScale=0.55)
-     
-    # draw current tracked offset position
-    #trackDelta = (tgts[1].getPosition()-tgts[0].getPosition())*umPerPixel
-    trackDelta = tgts[1].getPosition()*umPerPixel
-    for i in range(2):
-        s = '%s: %+0.2f um' % ('XZ'[i],np.round(trackDelta[1-i],2))
-        leftText(img, s, ds + np.array([0,20*i]))
-        
-def drawTrackBoxes(img, tgts):
-    '''Draws the outlines of the tracked shape boxes'''
-    for i in range(2):
-        center = tgts[i].getScreenPosition()
-        ul = center - UberTrack.TgtSize/2
-        br = center + UberTrack.TgtSize/2
-        cv2.rectangle(img,cvPt(ul),cvPt(br),(255,255,255))
-    
-def onMouse(event,x,y,flags,tgts):
-    '''Handles mouse events in the main window'''
-    # convert to full-screen size
-    x = width*x/float(displaySize[0])
-    y = height*y/float(displaySize[1])
-    if event == cv2.EVENT_LBUTTONDBLCLK:
-        tgts[0].setTarget(curimg,(x,y))
-    if event == cv2.EVENT_RBUTTONDBLCLK:
-        tgts[1].setTarget(curimg,(x,y))
         
  
 if __name__ == '__main__':
@@ -161,14 +103,8 @@ if __name__ == '__main__':
     # but i'm not going to
     # and i'm not sorry
     
-    cap = init(1600,1200)
-    
-    # get inital values
-    _, frame = cap.read()		
-    height, width, _ = frame.shape
-    
-    # and initialize target-matching frames, as single-channel versions of frame
-    targets = [UberTrack.Target() for i in [0,1]]
+    camera = init()
+    width,height = (1024,768)
 
     # zoom center and amount
     zoomx = width/2
@@ -196,22 +132,13 @@ if __name__ == '__main__':
     # create the window and set mouse callback
     # pass target image list as special param so we can write it
     cv2.namedWindow('UberCam')
-    cv2.setMouseCallback('UberCam',onMouse,targets)
-    
-    # connect to stepper motors
-    stepper = UberStep.Stepper(2)
     
     loop = True
     
     while(loop):
-        # get next frame
-        _, frame = cap.read()
-        if (frame == None):
-            print "Frame read error"
-            break;
-
-        # convert to grayscale by extracting G channel
-        curimg = np.array(frame[:,:,1])
+        # get next frame (by ref...)
+        camera.CopyImageMem()
+        curimg = camera.data
         
         # calculate source box from captured image, based on current zoom value
         zoomBox = (width/(2**zoom),height/(2**zoom))
@@ -223,21 +150,6 @@ if __name__ == '__main__':
         # get the top-left of the zoombox
         zoomOrigin = (zoomx-zoomBox[0]/2,zoomy-zoomBox[1]/2)
         
-        
-        # find the position of the pyramids
-        # first, create a shrunken version of the main image
-        t1 = time.time()
-        smimg = cv2.resize(curimg,(width/4,height/4))
-        # set kf if stepper is moving
-        if (stepper.timeSinceMoved() < 0.5):
-            targets[1].kfStep()
-        # then call target-matching functions
-        for i in range(2):
-            loc = targets[i].findMatch(curimg, smimg)
-            cv2.circle(curimg,cvPt(loc),5,0)
-            cv2.circle(curimg,cvPt(targets[i].getScreenPosition()),8,255)
-        
-        drawTrackBoxes(curimg,targets)
                 
         # always have average running
         newAvgFrame = newAvgFrame + (curimg/float(avgCount))
@@ -265,23 +177,12 @@ if __name__ == '__main__':
             cv2.rectangle(windowImage,subPos,(subPos[0]+subSize[0],subPos[1]+subSize[1]),(255,255,255))
         
         drawScaleBar(windowImage)
-        drawStepperInfo(windowImage)
-        drawTrackInfo(windowImage,targets)
         
         # display the image
         cv2.imshow("UberCam", windowImage)
         
-        # make sure backlash is set if needed, to 1 um or so
-        if (stepperBacklash):
-            stepper.setBacklash(15)
-        else:
-            stepper.setBacklash(0)
-    
-        # update the stepper motor
-        stepper.update()
-        
         # get any keypresses
-        char = cv2.waitKey(33)
+        char = cv2.waitKey(10)
         
         # scaling for zoom panning steps
         d = 128/2**zoom
@@ -294,7 +195,7 @@ if __name__ == '__main__':
             # opencv's hack to open camera settings panel
             cap.set(37, 1)
         if (char == ord(' ')):
-            saveImage(frame[:,:,1])
+            saveImage(curimg)
         # zoom in and out
         if (char == ord('=') or char == ord('+')):
             zoom = min(zoom+1,4)
@@ -321,37 +222,8 @@ if __name__ == '__main__':
                 avgFrame = curimg.copy()
                 newAvgFrame = curimg.copy()
                 newAvgFrame.fill((0,0,0))
-            
-        # set number of steps using number keys
-        if (char >= ord('1') and char <= ord('9')):
-            stepperSteps = int(np.round(stepAmts[char-ord('1')]))
-            
-        # set whether motor is doing backlash compensation motion or not
-        if (char == ord('B')):
-            stepperBacklash = not stepperBacklash
-            
-        # stepper motor commands, uppercase for safety (no accidental keypress)
-        if (char == ord('H')):
-            stepper.homeAll()
-        if (char == ord('Z')):
-            stepper.setZero()
-            for t in targets:
-                t.setZero()
-        # axis movement
-        if (char == ord('A')):
-            stepper.queueMove(0, stepperSteps)
-        if (char == ord('D')):
-            stepper.queueMove(0, -stepperSteps)
-        if (char == ord('W')):
-            stepper.queueMove(1, -stepperSteps)
-        if (char == ord('S')):
-            stepper.queueMove(1, stepperSteps)
-        if (char == ord('Q')):
-            stepper.queueMove(2, -stepperSteps)
-        if (char == ord('E')):
-            stepper.queueMove(2, stepperSteps)
-            
-            
-    stepper.close()
-    cap.release()
+        
+    camera.StopLiveVideo()
+    camera.FreeImageMem()
+    camera.ExitCamera()
     cv2.destroyAllWindows()
