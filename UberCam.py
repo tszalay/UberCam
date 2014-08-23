@@ -7,7 +7,7 @@ import time
 import uc480
 
 
-imgDir = 'D:\\UberCam\\'
+imgDir = 'C:\\UberCam\\'
 imgIndex = 0
 
 # size of image region and overall window
@@ -42,10 +42,10 @@ def init():
     camera.SetImageMem()
     camera.SetImageSize()
     camera.SetColorMode()
-    camera.SetPixelClock(30)
+    camera.SetPixelClock(20)
     camera.SetFrameRate(5)
     camera.SetExposureTime()
-    camera.SetGain(20)
+    camera.SetGain(100)
     camera.SetGainBoost()
     camera.SetGamma(160)
     camera.CaptureVideo()
@@ -105,6 +105,9 @@ if __name__ == '__main__':
     
     camera = init()
     width,height = (1024,768)
+    
+    # image gain
+    gain = 100;
 
     # zoom center and amount
     zoomx = width/2
@@ -157,14 +160,14 @@ if __name__ == '__main__':
         if (avgIndex == 0):
             # got through an entire cycle, update avg frame
             avgFrame = newAvgFrame.copy()
-            newAvgFrame.fill((0,0,0))
+            newAvgFrame.fill(0)
 
         # but only display when we gotsa
         if (doAverage):
             curimg = avgFrame
 
         # clear the window
-        windowImage.fill( (0,0,0) )
+        windowImage.fill(0)
         
         # scale from full image to display size, and draw to window
         windowImage[0:displaySize[1],0:displaySize[0]] = \
@@ -201,6 +204,17 @@ if __name__ == '__main__':
             zoom = min(zoom+1,4)
         if (char == ord('-')):
             zoom = max(zoom-1,0)
+            
+        # gain functions
+        if (char == ord('.')):
+            gain = min(gain+10,100)
+            camera.SetGain(gain)
+        if (char == ord(',')):
+            if (gain < 10):
+                gain = max(gain-1,1)
+            else:    
+                gain = max(gain-10,10)
+            camera.SetGain(gain)
         
         # move zoom window around
         # don't ask me where the arrow key codes come from.... 0_o
@@ -221,7 +235,7 @@ if __name__ == '__main__':
                 avgIndex = 0
                 avgFrame = curimg.copy()
                 newAvgFrame = curimg.copy()
-                newAvgFrame.fill((0,0,0))
+                newAvgFrame.fill(0)
         
     camera.StopLiveVideo()
     camera.FreeImageMem()

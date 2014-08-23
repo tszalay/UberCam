@@ -85,7 +85,7 @@ verbose = False
 
 if os.name=='nt':
     # UNTESTED: Please report results to http://code.google.com/p/pylibuc480/issues
-    libname = 'uc480'
+    libname = 'uc480_64'
     include_uc480_h = os.environ['PROGRAMFILES']+'\\Thorlabs DCU camera\\Develop\\Include\\uc480.h'
     lib = ctypes.util.find_library(libname)
     if lib is None:
