@@ -228,6 +228,7 @@ class camera(HCAM):
 		self.width = 1024
 		self.height = 768		
 		self.data = np.zeros((self.height,self.width),dtype=np.uint8)
+		self.fps = 0
 		return None
 		
 	def ExitCamera(self):
@@ -250,8 +251,9 @@ class camera(HCAM):
 		CALL("FreezeVideo",self,INT(wait))
 		
 	def CopyImageMem(self):
-
+                #CALL("LockSeqBuf",self,-1,self.image)
 		r = CALL("CopyImageMem",self,self.image,self.id,self.data.ctypes.data)
+		#CALL("UnlockSeqBuf",self,-1,self.image)
 		if r == -1:
 			self.GetError()
 			print self.err
@@ -262,6 +264,11 @@ class camera(HCAM):
 		self.err = ctypes.c_int()
 		self.errMessage = ctypes.c_char_p()
 		CALL("GetError",self,ctypes.byref(self.err),ctypes.byref(self.errMessage))
+		
+	def GetFrameCount(self):
+	        vals = np.zeros(10,dtype=np.uint64)
+	        CALL("GetImageInfo",self,self.id,vals.ctypes.data,76)
+	        return vals[6]
 		
 	def SetImageMem (self):
 		CALL("SetImageMem",self,self.image,self.id)
@@ -303,6 +310,7 @@ class camera(HCAM):
 	def SetFrameRate(self,fps):
 		newFPS = ctypes.c_double()
 		CALL("SetFrameRate",self,ctypes.c_double(fps),ctypes.pointer(newFPS))
+		self.fps = newFPS.value
 		return newFPS.value
 		
 	def SetSubSampling(self,mode=IS_SUBSAMPLING_DISABLE):

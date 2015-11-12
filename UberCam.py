@@ -3,6 +3,8 @@ import datetime
 import glob
 import numpy as np
 import time
+import subprocess as sp
+import pdb
 
 import uc480
 
@@ -15,8 +17,21 @@ displaySize = (800,600)
 windowSize = (800,700)
 
 # scaling of image, as per full camera resolution
-umPerPixel = 0.113
+umPerPixel = 0.113*5
 
+
+ff_command = ['ffmpeg.exe',
+        '-y', # (optional) overwrite output file if it exists
+        '-f', 'rawvideo',
+        '-vcodec','rawvideo',
+        '-s', '1024x768', # size of one frame
+        '-pix_fmt', 'gray',
+        '-r', '20', # frames per second
+        '-an', # Tells FFMPEG not to expect any audio
+        '-i', '-', # The imput comes from a pipe        
+#        '-vcodec', 'libx264',
+        '-vcodec', 'mjpeg',
+        'my_output_videofile.avi']
 
 
 
@@ -29,7 +44,7 @@ def init():
     global imgIndex
     
     # figure out how many images we have already from today
-    files =	 glob.glob(imgDir + imgRoot() + '.*.jpg')
+    files =	 glob.glob(imgDir + imgRoot() + '.*.???')
     if files:
         maxnum = max(map(lambda x: int((x.split('.'))[1]), files))
         imgIndex = maxnum + 1
@@ -43,11 +58,19 @@ def init():
     camera.SetImageSize()
     camera.SetColorMode()
     camera.SetPixelClock(20)
-    camera.SetFrameRate(5)
-    camera.SetExposureTime()
-    camera.SetGain(100)
-    camera.SetGainBoost()
+    
     camera.SetGamma(160)
+    
+    if 0:
+        camera.SetGain(1)
+        camera.SetExposureTime(10)
+        camera.SetFrameRate(20)
+    else:
+        camera.SetGain(1)
+        camera.SetExposureTime(2)
+        camera.SetFrameRate(20)
+        #camera.SetGainBoost()
+        
     camera.CaptureVideo()
     
     cv2.namedWindow("UberCam", cv2.cv.CV_WINDOW_AUTOSIZE)
@@ -62,6 +85,14 @@ def saveImage(img):
     cv2.imwrite(fname, img);
     print 'Saved ' + fname
     imgIndex = imgIndex + 1
+    
+def nextVideo():
+    global imgIndex
+    
+    fname = '{}{}.{:03d}.avi'.format(imgDir,imgRoot(),imgIndex)
+    imgIndex = imgIndex + 1
+    
+    return fname
     
 def cvPt(pt):
     '''Format a point in OpenCV-appropriate int-tuple'''
@@ -95,8 +126,8 @@ def drawScaleBar(img):
     # and the label
     ums = umPerPixel * 200 / 2**zoom
     centeredText(img, '{:3.1f} um'.format(ums), tuple(ds+np.array([-150, 40])))
-        
- 
+
+
 if __name__ == '__main__':
     # main doesn't need global decls since this isn't a function!
     # i should probably wrap this in a function to avoid global scoping and stuff
@@ -107,7 +138,7 @@ if __name__ == '__main__':
     width,height = (1024,768)
     
     # image gain
-    gain = 100;
+    gain = 1;
 
     # zoom center and amount
     zoomx = width/2
@@ -128,6 +159,9 @@ if __name__ == '__main__':
     # current image
     avgFrame = np.zeros((height,width),np.uint8)
     newAvgFrame = np.zeros((height,width),np.uint8)
+
+    # variable for recording video    
+    video = None
     
     # and create an image to draw to screen
     windowImage = np.zeros(windowSize[::-1],np.uint8)
@@ -138,7 +172,14 @@ if __name__ == '__main__':
     
     loop = True
     
+    lastFrameNum = -1
+    
     while(loop):
+        while camera.GetFrameCount() == lastFrameNum:
+            pass
+        lastFrameNum = camera.GetFrameCount()
+        time.sleep(0.010)
+        
         # get next frame (by ref...)
         camera.CopyImageMem()
         curimg = camera.data
@@ -194,9 +235,6 @@ if __name__ == '__main__':
         
         if (char == 27):
             loop = False
-        if (char == ord('p') or char == ord('P')):
-            # opencv's hack to open camera settings panel
-            cap.set(37, 1)
         if (char == ord(' ')):
             saveImage(curimg)
         # zoom in and out
@@ -215,6 +253,8 @@ if __name__ == '__main__':
             else:    
                 gain = max(gain-10,10)
             camera.SetGain(gain)
+        if (char == ord('a')):
+            camera.SetGain()
         
         # move zoom window around
         # don't ask me where the arrow key codes come from.... 0_o
@@ -226,6 +266,38 @@ if __name__ == '__main__':
             zoomx = zoomx-d
         if (char == 2555904):
             zoomx = zoomx+d
+            
+        # toggle recording
+        if (char == ord('R') or char == ord('r')):
+            if video is None:
+                ff_command[-1] = nextVideo()
+                #ff_command[-2] = ff_command[-1] + '.raw'
+                video = sp.Popen(ff_command, stdin=sp.PIPE, stdout=open('foo.txt','w'), stderr=open('foe.txt','w'))
+                #video = open(ff_command[-2],'wb')
+                print 'Started recording at %d fps' % int(camera.fps)
+                #video = cv2.VideoWriter(nextVideo(), -1, int(camera.fps), (width, height))
+                #if not video.isOpened():
+                #    print 'Failed to open video stream!'
+            else:
+                #video.release()
+                video.stdin.close()
+                if video.stderr is not None:
+                    video.stderr.close()
+                video.wait()
+#                video.close()
+                video = None
+                print 'Stopped recording'
+
+        # save image
+        if video is not None:
+            #video.write(curimg)
+            #pdb.set_trace()
+            #video.communicate(curimg.tostring())
+            video.stdin.write( curimg.tostring() )
+#            video.stdin.flush()
+            #print video.stderr.read()
+#            video.write( curimg.tostring() )
+            
         
         # toggle running average mode
         if (char == ord('Y') or char == ord('y')):
@@ -236,6 +308,10 @@ if __name__ == '__main__':
                 avgFrame = curimg.copy()
                 newAvgFrame = curimg.copy()
                 newAvgFrame.fill(0)
+                            
+    
+    if video is not None:
+        video.terminate()
         
     camera.StopLiveVideo()
     camera.FreeImageMem()
